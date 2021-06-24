@@ -25,6 +25,7 @@ from . import pymcuprog_main
 from .pymcuprog_main import WRITE_TO_HEX_MEMORIES
 from .deviceinfo.memorynames import MemoryNames, MemoryNameAliases
 
+
 def setup_logging(user_requested_level=logging.WARNING, default_path='logging.yaml',
                   env_key='MICROCHIP_PYTHONTOOLS_CONFIG'):
     """
@@ -83,6 +84,7 @@ def setup_logging(user_requested_level=logging.WARNING, default_path='logging.ya
     print("Reverting to basic logging.")
     logging.basicConfig(level=user_requested_level)
 
+
 # Helper functions
 def _parse_literal(literal):
     """
@@ -92,6 +94,7 @@ def _parse_literal(literal):
         return int(literal, 0)
     except ValueError:
         return float(literal)
+
 
 def main():
     """
@@ -192,12 +195,12 @@ def main():
     parser.add_argument("-f", "--filename",
                         type=str,
                         help="file to write / read. "
-                        "{}".format(filename_helpstring_extra))
+                             "{}".format(filename_helpstring_extra))
 
     parser.add_argument("-c", "--clk",
                         type=str,
                         help="clock frequency in Hz (bps) for programming interface. "
-                        "(eg: '-c 32768' or '-c 115k' or '-c 1M')")
+                             "(eg: '-c 32768' or '-c 115k' or '-c 1M')")
 
     parser.add_argument("-u", "--uart",
                         type=str,
@@ -247,6 +250,7 @@ def main():
 
     # Call main with args
     return pymcuprog_main.pymcuprog(arguments)
+
 
 if __name__ == "__main__":
     sys.exit(main())

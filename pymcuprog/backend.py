@@ -510,7 +510,7 @@ class Backend(object):
 
         return self.programmer.read_memory(memory_name=memory_name, offset=offset_byte, numbytes=numbytes)
 
-    def write_memory(self, data, memory_name=MemoryNames.FLASH, offset_byte=0):
+    def write_memory(self, data, memory_name=MemoryNames.FLASH, offset_byte=0, blocksize=0):
         """
         Write target device memory
 
@@ -522,11 +522,14 @@ class Backend(object):
         :raises PymcuprogSessionError: if a session has not been started (session_start not run)
         :raises ValueError: if trying to write outside the specified memory
         :raises ValueError: if the specified memory is not defined for the target device
-        """
+        :param blocksize: max number of bytes to send at a time. Ignored if 0 or omitted, and not passed
+        :to write_memory; only serialupdi supports this.        """
         self._is_tool_not_connected_raise()
         self._is_session_not_active_raise()
-
-        self.programmer.write_memory(data=data, memory_name=memory_name, offset=offset_byte)
+        if (blocksize == 0):
+            self.programmer.write_memory(data=data, memory_name=memory_name, offset=offset_byte)
+        else:
+            self.programmer.write_memory(data=data, memory_name=memory_name, offset=offset_byte, blocksize=blocksize)
 
     def verify_memory(self, data, memory_name=MemoryNames.FLASH, offset_byte=0):
         """

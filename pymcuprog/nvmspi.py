@@ -10,6 +10,11 @@ from .deviceinfo.memorynames import MemoryNames
 from .deviceinfo.deviceinfokeys import DeviceMemoryInfoKeys
 from .pymcuprog_errors import PymcuprogNotSupportedError
 
+
+import math
+from . import progress_bar
+
+
 class NvmAccessProviderCmsisDapSpi(NvmAccessProviderCmsisDapAvr):
     """
     NVM Access the SPI way
@@ -64,7 +69,12 @@ class NvmAccessProviderCmsisDapSpi(NvmAccessProviderCmsisDapAvr):
         if memory_info[DeviceMemoryInfoKeys.NAME] != MemoryNames.FLASH:
             raise PymcuprogNotSupportedError("Currently only Flash memory is supported by write for SPI/ISP")
         write_chunk_size = memory_info[DeviceMemoryInfoKeys.PAGE_SIZE]
+
+        n_chunk = math.ceil(len(data_aligned)/write_chunk_size)
+        bar = progress_bar.ProgressBar(n_chunk, hide=n_chunk == 1)
+
         while data_aligned:
+            bar.step()
             if len(data_aligned) < write_chunk_size:
                 write_chunk_size = len(data_aligned)
             chunk = data_aligned[0:write_chunk_size]

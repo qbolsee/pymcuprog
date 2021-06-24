@@ -3,6 +3,8 @@ Link layer in UPDI protocol stack
 """
 from logging import getLogger
 
+import array
+
 from pymcuprog.pymcuprog_errors import PymcuprogError
 from . import constants
 
@@ -29,7 +31,7 @@ class UpdiDatalink:
         Set the inter-byte delay bit and disable collision detection
         """
         self.stcs(constants.UPDI_CS_CTRLB, 1 << constants.UPDI_CTRLB_CCDETDIS_BIT)
-        self.stcs(constants.UPDI_CS_CTRLA, 1 << constants.UPDI_CTRLA_IBDLY_BIT)
+        self.stcs(constants.UPDI_CS_CTRLA, 0x06)
 
     def init_datalink(self):
         """
@@ -43,6 +45,17 @@ class UpdiDatalink:
             self._init_session_parameters()
             if not self._check_datalink():
                 raise PymcuprogError("UPDI initialisation failed")
+
+    def change_baud(self, baud):
+        if self.updi_phy is not None:
+            self.stcs(constants.UPDI_CS_CTRLA, 0x06)
+            if baud <= 115200:
+                self.stcs(constants.UPDI_ASI_CTRLA, 0x03)
+            elif baud > 230400:
+                self.stcs(constants.UPDI_ASI_CTRLA, 0x01)
+            else:
+                self.stcs(constants.UPDI_ASI_CTRLA, 0x02)
+            self.updi_phy.change_baud(baud)
 
     def _check_datalink(self):
         """
@@ -99,12 +112,17 @@ class UpdiDatalink:
     def ld_ptr_inc16(self, words):
         """
         Load a 16-bit word value from the pointer location with pointer post-increment
+        Load a 16-bit word value from the pointer location with pointer post-increment.
+        For improved performance of serialupdi for Arduino, send the REP instruction in the same command as LD
 
         :param words: number of words to load
         :return: values read
         """
         self.logger.debug("LD16 from ptr++")
-        self.updi_phy.send([constants.UPDI_PHY_SYNC, constants.UPDI_LD | constants.UPDI_PTR_INC |
+        # combine REP, words with ld *ptr++
+        self.updi_phy.send([constants.UPDI_PHY_SYNC, constants.UPDI_REPEAT | constants.UPDI_REPEAT_BYTE,
+                            (words - 1) & 0xFF, constants.UPDI_PHY_SYNC,
+                            constants.UPDI_LD | constants.UPDI_PTR_INC |
                             constants.UPDI_DATA_16])
         return self.updi_phy.receive(words << 1)
 
@@ -153,6 +171,62 @@ class UpdiDatalink:
             if len(response) != 1 or response[0] != constants.UPDI_PHY_ACK:
                 raise PymcuprogError("Error with st_ptr_inc16")
             num += 2
+
+    def st_ptr_inc16_RSD(self, data, blocksize):
+        """
+        Store a 16-bit word value to the pointer location with pointer post-increment
+        :param data: data to store
+        :blocksize: max number of bytes being sent -1 for all.
+                    Warning: This does not strictly honor blocksize for values < 6
+                    We always glob together the STCS(RSD) and REP commands.
+                    But this should pose no problems for compatibility, because your serial adapter can't deal with 6b chunks,
+                    none of pymcuprog would work!
+        """
+        self.logger.debug("ST16 to *ptr++ with RSD, data length: 0x%03X in blocks of:  %d", len(data), blocksize)
+
+        # for performance we glob everything together into one USB transfer....
+        repnumber = (len(data) >> 1) - 1
+        # calculate number of reps, to request from target, because we're about to shit on the evidence.
+
+        data += array.array("B", [constants.UPDI_PHY_SYNC, constants.UPDI_STCS | constants.UPDI_CS_CTRLA, 0x06])
+
+        # after the data, we want to send STCS to CS CTRLA. set to 0x06.
+        if blocksize == -1:
+            # if sending whole thing as one block how big would that be??
+            # Send whole thing at once stcs + repeat + st + (data + stcs)
+            blocksize = 3 + 3 + 2 + len(data)
+
+        if blocksize < 10:
+            # very small block size - we send the two commands as one, and then and combine the st *ptr++ command
+            # into data, , and  plus a 0 or 2 bytes opf data, then
+            firstpacket = array.array("B",
+                                      [constants.UPDI_PHY_SYNC, constants.UPDI_STCS | constants.UPDI_CS_CTRLA, 0x0E,
+                                       constants.UPDI_PHY_SYNC, constants.UPDI_REPEAT | constants.UPDI_REPEAT_BYTE,
+                                       (repnumber & 0xFF)])
+            data = array.array("B", [constants.UPDI_PHY_SYNC,
+                                     constants.UPDI_ST | constants.UPDI_PTR_INC | constants.UPDI_DATA_16]) + data
+            num = 0
+        else:
+            firstpacket = array.array("B",
+                                      [constants.UPDI_PHY_SYNC, constants.UPDI_STCS | constants.UPDI_CS_CTRLA, 0x0E,
+                                       constants.UPDI_PHY_SYNC, constants.UPDI_REPEAT | constants.UPDI_REPEAT_BYTE,
+                                       (repnumber & 0xFF),
+                                       constants.UPDI_PHY_SYNC,
+                                       constants.UPDI_ST | constants.UPDI_PTR_INC | constants.UPDI_DATA_16]) + \
+                          data[:blocksize - 8]
+            # If blocksize  != -1, then above gets us the amount of data to finish the block after 8 byte front matter.
+            # we set it to len(data) + 8 above (total length of the data we were sent + 11)
+            # Overall blob of data (which receives no response at any point!) is:
+            # STCS (3 bytes) turn on RSD, REP (3 btytes) set number of words to write, ST  (ST *ptr++ )) up to 512b
+            # data, and then finish with the 3 byte STCS
+            num = blocksize - 8
+        self.updi_phy.send(firstpacket)
+
+        # if finite block size, this is used.
+        while num < len(data):
+            data_slice = data[num:num + blocksize]
+            self.updi_phy.send(data_slice)
+            num += len(data_slice)
 
     def repeat(self, repeats):
         """

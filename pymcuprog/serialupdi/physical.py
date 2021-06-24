@@ -27,8 +27,12 @@ class UpdiPhysical:
         self.ser = None
 
         self.initialise_serial(self.port, self.baud)
+
         # send an initial break as handshake
         self.send([constants.UPDI_BREAK])
+
+    def change_baud(self, newbaud):
+        self.ser.baudrate = newbaud
 
     def initialise_serial(self, port, baud):
         """
@@ -39,7 +43,11 @@ class UpdiPhysical:
         """
         self.logger.info("Opening port '%s' at '%d' baud", port, baud)
         try:
-            self.ser = serial.Serial(port, baud, parity=serial.PARITY_EVEN, timeout=1, stopbits=serial.STOPBITS_TWO)
+            self.ser = serial.Serial(None, baud, parity=serial.PARITY_EVEN, timeout=1, stopbits=serial.STOPBITS_TWO)
+            self.ser.port = port
+            self.ser.dtr = False
+            self.ser.rts = False
+            self.ser.open()
         except SerialException:
             self.logger.error("Unable to open serial port '%s'", port)
             raise
@@ -67,8 +75,12 @@ class UpdiPhysical:
         # At 300 bauds, the break character will pull the line low for 30ms
         # Which is slightly above the recommended 24.6ms
         self.ser.close()
-        temporary_serial = serial.Serial(self.port, 300, parity=serial.PARITY_EVEN, timeout=1,
+        temporary_serial = serial.Serial(None, 300, parity=serial.PARITY_EVEN, timeout=1,
                                          stopbits=serial.STOPBITS_ONE)
+        temporary_serial.port = self.port
+        temporary_serial.dtr = False
+        temporary_serial.rts = False
+        temporary_serial.open()
 
         # Send two break characters, with 1 stop bit in between
         temporary_serial.write([constants.UPDI_BREAK])

@@ -12,6 +12,10 @@ from .pymcuprog_errors import PymcuprogError
 from .deviceinfo.memorynames import MemoryNames
 from .deviceinfo.deviceinfokeys import DeviceMemoryInfoKeys
 
+import math
+from . import progress_bar
+
+
 class NvmAccessProviderCmsisDapMZeroPlus(NvmAccessProviderCmsisDapTool):
     """
     SAMD programmer
@@ -89,8 +93,12 @@ class NvmAccessProviderCmsisDapMZeroPlus(NvmAccessProviderCmsisDapTool):
         while len(data_aligned) % write_chunk_size:
             data_aligned.append(0xFF)
 
+        n_chunk = math.ceil(len(data_aligned)/write_chunk_size)
+        bar = progress_bar.ProgressBar(n_chunk, hide=n_chunk == 1)
+
         # Chunk and write
         while data_aligned:
+            bar.step()
             self.logger.debug("Writing %d bytes to address 0x%06X", write_chunk_size, offset_aligned)
             chunk = data_aligned[0:write_chunk_size]
             if memtype_string == MemoryNames.FLASH:

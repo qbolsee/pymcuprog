@@ -31,6 +31,7 @@ except ImportError:
 
 STATUS_SUCCESS = 0
 STATUS_FAILURE = 1
+STATUS_FAILURE_LOCKED = 2
 
 # Only include memories that can be written when writing memories to hex file
 WRITE_TO_HEX_MEMORIES = [MemoryNames.EEPROM, MemoryNames.FLASH, MemoryNames.FUSES, MemoryNames.CONFIG_WORD, MemoryNames.USER_ROW]
@@ -150,10 +151,12 @@ def _action_setsupplyvoltage(backend, literal):
             print("Measured voltage: {0:0.2f}V".format(voltage))
     return STATUS_SUCCESS
 
+
 def _action_reboot_debugger(backend):
     print("Rebooting tool...")
     backend.reboot_tool()
     return STATUS_SUCCESS
+
 
 def _action_ping(backend):
     print("Pinging device...")
@@ -186,6 +189,7 @@ def _action_erase(backend, args):
     backend.erase(args.memory, address=None)
     print("Erased.")
     return STATUS_SUCCESS
+
 
 def _action_read(backend, args):
     # Reading with bytes argument requires that memory type is specified
@@ -244,6 +248,7 @@ def _action_read(backend, args):
 
     return STATUS_SUCCESS
 
+
 def _action_verify(backend, args):
     hexfile = False
     binary = False
@@ -284,6 +289,7 @@ def _action_verify(backend, args):
 
     return STATUS_SUCCESS
 
+
 def _get_file_prefix_and_postfix(filepath):
     """
     Get file prefix and postfix from the filepath
@@ -300,6 +306,7 @@ def _get_file_prefix_and_postfix(filepath):
 
     return prefix, postfix
 
+
 def _extract_writeable_memories(memory_segments):
     """
     Take a list of memory segments and return the segments that can be written
@@ -315,6 +322,7 @@ def _extract_writeable_memories(memory_segments):
         if segment.memory_info[DeviceMemoryInfoKeys.NAME] in WRITE_TO_HEX_MEMORIES:
             writeable_segments.append(segment)
     return writeable_segments
+
 
 def _action_write(backend, args):
     # If a filename is specified, read from it
@@ -336,7 +344,10 @@ def _action_write(backend, args):
 
             print("Writing from hex file...")
 
-            _write_memory_segments(backend, result, args.verify)
+            if args.blocksize:
+                _write_memory_segments(backend, result, args.verify, blocksize=args.blocksize)
+            else:
+                _write_memory_segments(backend, result, args.verify)
         else:
             with open(filepath, "rb") as binfile:
                 data_from_file = bytearray(binfile.read())
@@ -364,7 +375,8 @@ def _action_write(backend, args):
 
     return STATUS_SUCCESS
 
-def _write_memory_segments(backend, memory_segments, verify):
+
+def _write_memory_segments(backend, memory_segments, verify, blocksize = 0):
     """
     Write content of list of memory segments
 
@@ -373,11 +385,18 @@ def _write_memory_segments(backend, memory_segments, verify):
         raw data bytes and memory_info is a dictionary with memory information (as defined in
         deviceinfo.deviceinfo.DeviceMemoryInfo).
     :param verify: If True verify the written data by reading it back and compare
+    :param blocksize: this is a signal to write_memory for updiserial when writing flash; if 0 or not supplied
+        do not use blocks (equivalent to blocksize == 2 bytes or 1 word). If -1, it will set tje blocksize to
+        the page size of the target chip, which can imcrease write speed more than 10:1. Any other number will
+        be used as supplied. Even numbers up to the page size are recommended.
+        Any other negative number is invalid, and is zero'ed out.
     """
+    if blocksize < -1:
+        blocksize = 0
     for segment in memory_segments:
         memory_name = segment.memory_info[DeviceMemoryInfoKeys.NAME]
         print("Writing {}...".format(memory_name))
-        backend.write_memory(segment.data, memory_name, segment.offset)
+        backend.write_memory(segment.data, memory_name, segment.offset, blocksize=blocksize)
         if verify:
             print("Verifying {}...".format(memory_name))
             verify_ok = backend.verify_memory(segment.data, memory_name, segment.offset)
@@ -385,6 +404,7 @@ def _write_memory_segments(backend, memory_segments, verify):
                 print("OK")
             else:
                 print("Verification failed!")
+
 
 def _action_reset(backend):
     backend.hold_in_reset()
@@ -394,6 +414,7 @@ def _action_reset(backend):
     time.sleep(0.1)
     backend.release_from_reset()
     return STATUS_SUCCESS
+
 
 def _debugger_actions(backend, args):
     """
@@ -455,6 +476,7 @@ def _programming_actions(backend, args):
 
     return status
 
+
 def _setup_tool_connection(args):
     toolconnection = None
 
@@ -477,6 +499,7 @@ def _setup_tool_connection(args):
         toolconnection = ToolUsbHidConnection(serialnumber=usb_serial, tool_name=product)
 
     return toolconnection
+
 
 def _select_target_device(backend, args):
     device_mounted = None
@@ -504,6 +527,7 @@ def _select_target_device(backend, args):
         print("Cut all straps between the debugger and the on-board target when accessing an external device!")
 
     return device_selected
+
 
 def _start_session(backend, device, args):
     """
@@ -551,7 +575,7 @@ def _start_session(backend, device, args):
         print("Locked AVR UPDI devices can:")
         print(" - be unlocked using command: erase --chip-erase-locked-device")
         print(" - write user row values using command: write -m user_row --user-row-locked-device")
-        status = STATUS_FAILURE
+        status = STATUS_FAILURE_LOCKED
     except PymcuprogNotSupportedError:
         print("Unable to setup stack for device {0:s}".format(sessionconfig.device))
         print("Currently supported devices (in 'devices' folder):")

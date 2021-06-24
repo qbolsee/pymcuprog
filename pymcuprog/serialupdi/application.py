@@ -14,23 +14,19 @@ from .timeout import Timeout
 def decode_sib(sib):
     """
     Turns the SIB into something readable
-
     :param sib: SIB data to decode
     """
     sib_info = {}
     logger = getLogger(__name__)
 
-    # Do some simple checks:
+    sib = sib.replace(b"\x00", b"")
+
     try:
-        # SIB should contain only ASCII characters
         sib_string = sib.decode('ascii')
     except UnicodeDecodeError:
-        logger.error("SIB read returned invalid characters")
         return None
 
-    # Vital information is stored in the first 19 characters
     if len(sib_string) < 19:
-        logger.error("SIB read returned incomplete string")
         return None
 
     logger.info("SIB: '%s'", sib_string)
@@ -69,7 +65,9 @@ class UpdiApplication:
         self.device = device
         # Build the UPDI stack:
         # Create a physical
-        self.phy = UpdiPhysical(serialport, baud)
+
+        baud_temp = min(baud, 115200)
+        self.phy = UpdiPhysical(serialport, baud_temp)
 
         # Create a DL - use 16-bit until otherwise known
         datalink = UpdiDatalink16bit()
@@ -79,6 +77,9 @@ class UpdiApplication:
 
         # Init (active) the datalink
         datalink.init_datalink()
+
+        # set the actual baud
+        datalink.change_baud(baud)
 
         # Create a read write access layer using this data link
         self.readwrite = UpdiReadWrite(datalink)
