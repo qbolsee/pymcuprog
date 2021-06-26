@@ -100,7 +100,7 @@ class UpdiDatalink:
     def ld_ptr_inc(self, size):
         """
         Loads a number of bytes from the pointer location with pointer post-increment
- 
+
         :param size: number of bytes to load
         :return: values read
         """
@@ -188,6 +188,9 @@ class UpdiDatalink:
         repnumber = (len(data) >> 1) - 1
         # calculate number of reps, to request from target, because we're about to shit on the evidence.
 
+        if type(data) != array.array:
+            data = array.array("B", data)
+
         data += array.array("B", [constants.UPDI_PHY_SYNC, constants.UPDI_STCS | constants.UPDI_CS_CTRLA, 0x06])
 
         # after the data, we want to send STCS to CS CTRLA. set to 0x06.
@@ -251,7 +254,7 @@ class UpdiDatalink:
     def key(self, size, key):
         """
         Write a key
- 
+
         :param size: size of key (0=64B, 1=128B, 2=256B)
         :param key: key value
         """
